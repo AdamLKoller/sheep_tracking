@@ -54,13 +54,13 @@ def track(
     """
 
     model = YOLO(model_path)
-    distance_calculator = distance_calculation()
+    distance_calculator = distance_calculation(px=1280, py=664)
 
     # Preparing output video parameters
     vidcap = cv2.VideoCapture(input_video_path)
     fps = vidcap.get(cv2.CAP_PROP_FPS)
     total_frames = int(vidcap.get(cv2.CAP_PROP_FRAME_COUNT))
-    fourcc = cv2.VideoWriter_fourcc('m', 'p', '4', 'v') 
+    fourcc = cv2.VideoWriter_fourcc("m", "p", "4", "v")
     width = int(vidcap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(vidcap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     tracked_video = cv2.VideoWriter(output_video_path, fourcc, fps, (width, height))
@@ -98,6 +98,7 @@ def track(
             "image": image,
             "bounding-box coords": initial_frame_box_coords[id],
             "distance traveled": 0,
+            "lagging distance": 0,
         }
 
     # Iterate through the frames of the input video
@@ -176,13 +177,19 @@ def track(
                 min_value = distance_matrix[min_row][min_col]
                 if min_value < pjt:
                     # Calculate "world" distance
-                    print(coords[min_col])
-                    print(id_to_lastseen_img[min_row]["bounding-box coords"])
+                    last_x_min, last_y_min, last_x_max, last_y_max = id_to_lastseen_img[
+                        min_row
+                    ]["bounding-box coords"]
+                    next_x_min, next_y_min, next_x_max, next_y_max = coords[min_col]
+
+                    # print([last_x_min, last_y_max, last_x_max, last_y_min])
+                    # print([next_x_min, next_y_max, next_x_max, next_y_min])
+
                     world_distance = distance_calculator.cal_distance(
-                        id_to_lastseen_img[min_row]["bounding-box coords"],
-                        coords[min_col],
+                        [last_x_min, last_y_max, last_x_max, last_y_min],
+                        [next_x_min, next_y_max, next_x_max, next_y_min],
                     )
-                    print(world_distance)
+                    # print(world_distance)
                     id_to_lastseen_img[min_row]["distance traveled"] += world_distance
                     # Assign new "last_seen" image to id
                     id_to_lastseen_img[min_row]["image"] = next_frame_sheep_images[
@@ -199,6 +206,12 @@ def track(
                 f"{len(next_frame_sheep_images)} detected in frame {frame_number} \t {count_resassigned} given new labels"
             )
 
+        if frame_number % 10 == 0:
+            for id in id_to_lastseen_img.keys():
+                id_to_lastseen_img[id]["lagging distance"] = id_to_lastseen_img[id][
+                    "distance traveled"
+                ]
+
         # Write frame to video with bounding boxes and labels
         for id in id_to_lastseen_img.keys():
             box = id_to_lastseen_img[id]["bounding-box coords"]
@@ -214,9 +227,10 @@ def track(
                 (0, 255, 0),
                 2,
             )
+
             cv2.putText(
                 next_frame,
-                str(id_to_lastseen_img[id]["distance traveled"]),
+                str(round(id_to_lastseen_img[id]["lagging distance"])),
                 ((x_min + x_max) // 2, (y_min + y_max) // 2),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.9,

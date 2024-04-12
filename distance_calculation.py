@@ -44,17 +44,17 @@ class distance_calculation:
 
         if (pixel_width / pixel_height) > 1.8:
             # ori = "horizontal"
-            print("ori hor")
+            # print("ori hor")
             self.x_multiplier = self.sheep_length
             self.y_multiplier = self.sheep_height
         if (pixel_height / pixel_width) > 1.8:
             # ori = "vertical"
-            print("ori vert")
+            # print("ori vert")
             self.x_multiplier = self.sheep_thick
             self.y_multiplier = self.sheep_length
         else:
             # ori = "diagonal"
-            print("ori diagonal")
+            # print("ori diagonal")
             # self.x_multiplier = self.sheep_length * np.cos(np.arctan(pixel_width/pixel_height))
             self.x_multiplier = (
                 self.sheep_length
@@ -89,7 +89,9 @@ class distance_calculation:
             if delta_Rw > 0:
                 return R * np.tan(beta)
             return -R * np.tan(beta)
-        raise ValueError("beta", beta, "> than pi/2 = ", np.pi / 2)
+        else:  # Short-term edit
+            return np.pi / 2  # Short-term edit
+        # raise ValueError("beta", beta, "> than pi/2 = ", np.pi / 2)
 
     def delta_y(self, delta_Rh):
         """
@@ -110,8 +112,8 @@ class distance_calculation:
             # return R*np.sin(delta_alpha)/np.sin(np.pi/2 - alpha - delta_alpha)
             return self.h_anchor * np.tan(alpha - delta_alpha) - self.y_anchor
 
-        print("alpha", alpha)
-        print("delta", delta_alpha)
+        # print("alpha", alpha)
+        # print("delta", delta_alpha)
         raise ValueError(
             "(alpha + delta_alpha)", alpha + delta_alpha, "> than pi/2 = ", np.pi / 2
         )
