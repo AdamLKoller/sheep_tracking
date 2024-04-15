@@ -5,6 +5,8 @@ import torch
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 from distance_calculation import distance_calculation
+from sklearn.metrics import pairwise_distances
+
 
 def convert_coords(coords: list):
     x_min, y_min, x_max, y_max = coords
@@ -12,17 +14,41 @@ def convert_coords(coords: list):
     x_min, x_max = x_min * 3.35, x_max * 3.35
     return [int(x_min), int(y_min), int(x_max), int(y_max)]
 
-def resolve_lost_tracks(lost_tracks_prev: dict, lost_tracks_next: dict):
+
+def resolve_lost_tracks(
+    lost_tracks_prev: dict, lost_tracks_next: dict, metric: str = "cosine"
+):
     prev_id_to_next_id = dict()
-    similarity_matrix = cosine_similarity(
-        list(lost_tracks_prev.values()), list(lost_tracks_next.values())
-    )
+
+    if metric == "cosine":
+        similarity_matrix = cosine_similarity(
+            list(lost_tracks_prev.values()), list(lost_tracks_next.values())
+        )
+        threshold = 0.9999
+    elif metric == "manhattan":
+        similarity_matrix = np.negative(
+            pairwise_distances(
+                list(lost_tracks_prev.values()),
+                list(lost_tracks_next.values()),
+                metric="manhattan",
+            )
+        )
+        threshold = -50
+
+    else:
+        raise ValueError("Input must be either 'cosine' or 'manhattan'")
+
     while not np.all(np.isinf(similarity_matrix)):
         max_index = np.argmax(similarity_matrix)
         max_row, max_col = np.unravel_index(max_index, similarity_matrix.shape)
-        prev_id_to_next_id[list(lost_tracks_prev.keys())[max_row]] = list(
-            lost_tracks_next.keys()
-        )[max_col]
+        max_value = similarity_matrix[max_row, max_col]
+
+        if max_value > threshold:
+            prev_id_to_next_id[list(lost_tracks_prev.keys())[max_row]] = list(
+                lost_tracks_next.keys()
+            )[max_col]
+        else:
+            return prev_id_to_next_id
         similarity_matrix[max_row, :] = -np.inf
         similarity_matrix[:, max_col] = -np.inf
 
@@ -44,11 +70,17 @@ def augment_and_resize_frame(frame, augment: bool = False):
     return frame
 
 
-def adam_tracking_v2(model_path: str, input_video_path: str, output_video_path: str, 
-                     augment: bool=False, display_distances: bool = True, 
-                     verbose: bool=True):
-    
-    print(f'Beginning tracking on {input_video_path}')
+def adam_tracking_v2(
+    model_path: str,
+    input_video_path: str,
+    output_video_path: str,
+    augment: bool = False,
+    display_distances: bool = True,
+    verbose: bool = True,
+    resolve_metric: str = "cosine",
+):
+
+    print(f"Beginning tracking on {input_video_path}")
 
     # Defining distance calculation object
     distance_calculator = distance_calculation()
@@ -68,12 +100,12 @@ def adam_tracking_v2(model_path: str, input_video_path: str, output_video_path: 
     height = int(vidcap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
     output_video = cv2.VideoWriter(output_video_path, fourcc, fps, (width, height))
-    total_frames = int(vidcap.get(cv2.CAP_PROP_FRAME_COUNT))
 
+    # Initializing dictionaries
     prev_frame_predictions = {}
     distances = {}
 
-    for frame_number in range(1, total_frames+1):
+    for frame_number in range(1, total_frames):
 
         input_video.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
 
@@ -88,6 +120,7 @@ def adam_tracking_v2(model_path: str, input_video_path: str, output_video_path: 
             mode="track",
             conf=0.5,
             verbose=False,
+            max_det=32,
         )
 
         next_frame_predictions = dict(
@@ -110,7 +143,9 @@ def adam_tracking_v2(model_path: str, input_video_path: str, output_video_path: 
         }
 
         if lost_tracks_next and lost_tracks_prev:
-            prev_id_to_next_id = resolve_lost_tracks(lost_tracks_prev, lost_tracks_next)
+            prev_id_to_next_id = resolve_lost_tracks(
+                lost_tracks_prev, lost_tracks_next, metric=resolve_metric
+            )
             for prev_id, next_id in prev_id_to_next_id.items():
                 next_frame_predictions[prev_id] = next_frame_predictions.pop(next_id)
 
@@ -130,7 +165,9 @@ def adam_tracking_v2(model_path: str, input_video_path: str, output_video_path: 
         for id, box in next_frame_predictions.items():
             x_min, y_min, x_max, y_max = convert_coords(box)
             label = str(id)
-            cv2.rectangle(original_next_frame, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
+            cv2.rectangle(
+                original_next_frame, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2
+            )
             cv2.putText(
                 original_next_frame,
                 label,
@@ -157,18 +194,18 @@ def adam_tracking_v2(model_path: str, input_video_path: str, output_video_path: 
         if verbose:
             print("Processed frame", frame_number, "of", total_frames)
 
-    print(f'Finished tracking. Output video written to {output_video_path}')
+    print(f"Finished tracking. Output video written to {output_video_path}")
     output_video.release()
 
 
-
-
 if __name__ == "__main__":
+
     adam_tracking_v2(
         model_path="./sheep_tracking/models/best.pt",
-        input_video_path="./sheep_tracking/input_videos/natural/evaluation_2.mp4",
-        output_video_path="./sheep_tracking/output_videos/evaluation_2_tracked.mp4",
+        input_video_path="./sheep_tracking/input_videos/natural/sheeps_30sec.mp4",
+        output_video_path="./sheep_tracking/output_videos/test_no_distances.mp4",
         augment=True,
-        display_distances= True,
-        verbose=True
+        display_distances=False,
+        verbose=True,
+        resolve_metric="manhattan",
     )
